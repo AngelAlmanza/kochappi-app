@@ -72,6 +72,8 @@ fun HomeScreen(
                 color = MaterialTheme.colorScheme.onSurface,
             )
 
+            Spacer(Modifier.height(16.dp))
+
             Text(
                 text = "Tu camino hacia un mejor entrenamiento comienza aquí.",
                 style = MaterialTheme.typography.bodyLarge,
