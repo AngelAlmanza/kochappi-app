@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -19,19 +20,24 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,7 +49,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.almanza.kochappi.ui.common.OtpTextField
+import com.almanza.kochappi.ui.common.UiState
 
 private const val STEP_EMAIL = 0
 private const val STEP_CODE = 1
@@ -54,6 +63,7 @@ private const val STEP_NEW_PASSWORD = 2
 fun ForgotPasswordScreen(
     onPasswordReset: () -> Unit,
     onBack: () -> Unit,
+    viewModel: ForgotPasswordViewModel = hiltViewModel(),
 ) {
     var currentStep by rememberSaveable { mutableIntStateOf(STEP_EMAIL) }
     var email by rememberSaveable { mutableStateOf("") }
@@ -62,6 +72,26 @@ fun ForgotPasswordScreen(
     var confirmPassword by rememberSaveable { mutableStateOf("") }
     var newPasswordVisible by rememberSaveable { mutableStateOf(false) }
     var confirmPasswordVisible by rememberSaveable { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val sendCodeState by viewModel.sendCodeState.collectAsStateWithLifecycle()
+    val resetPasswordState by viewModel.resetPasswordState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(sendCodeState) {
+        when (val state = sendCodeState) {
+            is UiState.Success -> currentStep = STEP_CODE
+            is UiState.Error -> snackbarHostState.showSnackbar(state.message)
+            else -> {}
+        }
+    }
+
+    LaunchedEffect(resetPasswordState) {
+        when (val state = resetPasswordState) {
+            is UiState.Success -> onPasswordReset()
+            is UiState.Error -> snackbarHostState.showSnackbar(state.message)
+            else -> {}
+        }
+    }
 
     val stepTitle = when (currentStep) {
         STEP_EMAIL -> "Recuperar contraseña"
@@ -70,6 +100,7 @@ fun ForgotPasswordScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stepTitle) },
@@ -111,7 +142,8 @@ fun ForgotPasswordScreen(
                     STEP_EMAIL -> EmailStep(
                         email = email,
                         onEmailChange = { email = it },
-                        onSendCode = { currentStep = STEP_CODE },
+                        isLoading = sendCodeState is UiState.Loading,
+                        onSendCode = { viewModel.sendCode(email) },
                     )
                     STEP_CODE -> CodeStep(
                         code = code,
@@ -131,7 +163,10 @@ fun ForgotPasswordScreen(
                         onToggleConfirmPasswordVisibility = {
                             confirmPasswordVisible = !confirmPasswordVisible
                         },
-                        onResetPassword = onPasswordReset,
+                        isLoading = resetPasswordState is UiState.Loading,
+                        onResetPassword = {
+                            viewModel.resetPassword(email, code, newPassword)
+                        },
                     )
                 }
             }
@@ -143,6 +178,7 @@ fun ForgotPasswordScreen(
 private fun EmailStep(
     email: String,
     onEmailChange: (String) -> Unit,
+    isLoading: Boolean,
     onSendCode: () -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
@@ -161,6 +197,7 @@ private fun EmailStep(
         onValueChange = onEmailChange,
         label = { Text("Correo electrónico") },
         singleLine = true,
+        enabled = !isLoading,
         shape = RoundedCornerShape(12.dp),
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Email,
@@ -179,16 +216,24 @@ private fun EmailStep(
 
     Button(
         onClick = onSendCode,
-        enabled = email.isNotBlank(),
+        enabled = email.isNotBlank() && !isLoading,
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .height(52.dp),
     ) {
-        Text(
-            text = "Enviar código",
-            style = MaterialTheme.typography.titleMedium,
-        )
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = MaterialTheme.colorScheme.onPrimary,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Text(
+                text = "Enviar código",
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
     }
 }
 
@@ -241,6 +286,7 @@ private fun NewPasswordStep(
     onToggleNewPasswordVisibility: () -> Unit,
     confirmPasswordVisible: Boolean,
     onToggleConfirmPasswordVisibility: () -> Unit,
+    isLoading: Boolean,
     onResetPassword: () -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
@@ -260,6 +306,7 @@ private fun NewPasswordStep(
         onValueChange = onNewPasswordChange,
         label = { Text("Nueva contraseña") },
         singleLine = true,
+        enabled = !isLoading,
         shape = RoundedCornerShape(12.dp),
         visualTransformation = if (newPasswordVisible) {
             VisualTransformation.None
@@ -296,6 +343,7 @@ private fun NewPasswordStep(
         onValueChange = onConfirmPasswordChange,
         label = { Text("Confirmar contraseña") },
         singleLine = true,
+        enabled = !isLoading,
         shape = RoundedCornerShape(12.dp),
         visualTransformation = if (confirmPasswordVisible) {
             VisualTransformation.None
@@ -341,15 +389,23 @@ private fun NewPasswordStep(
 
     Button(
         onClick = onResetPassword,
-        enabled = passwordsMatch,
+        enabled = passwordsMatch && !isLoading,
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .height(52.dp),
     ) {
-        Text(
-            text = "Restablecer contraseña",
-            style = MaterialTheme.typography.titleMedium,
-        )
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = MaterialTheme.colorScheme.onPrimary,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Text(
+                text = "Restablecer contraseña",
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
     }
 }

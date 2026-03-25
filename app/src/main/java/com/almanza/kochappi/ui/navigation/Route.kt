@@ -10,29 +10,24 @@ sealed interface Route {
     // Trainer — Clients
     @Serializable data object ClientList : Route
     @Serializable data object ClientAdd : Route
-    @Serializable data class ClientEdit(val clientId: String) : Route
+    @Serializable data class ClientEdit(val clientId: Int) : Route
 
     // Trainer — Exercises
     @Serializable data object ExerciseList : Route
     @Serializable data object ExerciseAdd : Route
-    @Serializable data class ExerciseEdit(val exerciseId: String) : Route
+    @Serializable data class ExerciseEdit(val exerciseId: Int) : Route
 
     // Trainer — Templates
     @Serializable data object TemplateList : Route
     @Serializable data object TemplateAdd : Route
-    @Serializable data class TemplateEdit(val templateId: String) : Route
+    @Serializable data class TemplateEdit(val templateId: Int) : Route
     @Serializable data class TemplateExerciseAdd(
-        val templateId: String,
+        val templateId: Int,
         val dayIndex: Int,
-    ) : Route
-    @Serializable data class TemplateExerciseEdit(
-        val templateId: String,
-        val dayIndex: Int,
-        val exerciseIndex: Int,
     ) : Route
 
     // Trainer — Client Detail
-    @Serializable data class ClientDetail(val clientId: String) : Route
+    @Serializable data class ClientDetail(val clientId: Int) : Route
 
     // Trainer — Routines
     @Serializable data class RoutineAdd(
@@ -51,6 +46,9 @@ sealed interface Route {
         val exerciseIndex: Int,
     ) : Route
     @Serializable data class RoutineSelectTemplate(val clientId: String) : Route
+
+    // Client
+    @Serializable data object ClientDashboard : Route
 
     // Settings
     @Serializable data object Settings : Route

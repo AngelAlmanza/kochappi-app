@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.almanza.kochappi.data.local.datastore.ThemeMode
 import com.almanza.kochappi.data.local.datastore.ThemePreferences
+import com.almanza.kochappi.data.session.SessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -17,6 +18,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val themePreferences: ThemePreferences,
+    private val sessionManager: SessionManager,
 ) : ViewModel() {
 
     val themeMode: StateFlow<ThemeMode> = themePreferences.themeMode
@@ -33,5 +35,11 @@ class SettingsViewModel @Inject constructor(
 
     fun setProfilePhoto(uri: Uri?) {
         _profilePhotoUri.value = uri
+    }
+
+    fun logout() {
+        viewModelScope.launch {
+            sessionManager.logout()
+        }
     }
 }

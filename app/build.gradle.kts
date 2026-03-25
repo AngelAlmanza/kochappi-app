@@ -22,6 +22,18 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "env"
+    productFlavors {
+        create("emulator") {
+            dimension = "env"
+            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8081/api/v1/\"")
+        }
+        create("device") {
+            dimension = "env"
+            buildConfigField("String", "BASE_URL", "\"http://192.168.1.64:8081/api/v1/\"")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -33,8 +45,6 @@ android {
         }
         debug {
             isMinifyEnabled = false
-            // Aquí puedes configurar un buildConfigField para la URL base de tu API
-            // buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:8080/api/\"")
         }
     }
 
