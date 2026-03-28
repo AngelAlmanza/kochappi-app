@@ -18,9 +18,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -29,37 +33,57 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-
-// Placeholder data for UI preview
-private data class ClientPreview(
-    val id: String,
-    val name: String,
-    val email: String,
-    val startDate: String,
-)
-
-private val sampleClients = listOf(
-    ClientPreview("1", "Carlos García", "carlos@email.com", "01/01/2026"),
-    ClientPreview("2", "María López", "maria@email.com", "15/01/2026"),
-    ClientPreview("3", "Juan Martínez", "juan@email.com", "01/02/2026"),
-    ClientPreview("4", "Ana Rodríguez", "ana@email.com", "10/02/2026"),
-    ClientPreview("5", "Pedro Sánchez", "pedro@email.com", "20/02/2026"),
-)
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.almanza.kochappi.domain.model.Customer
+import com.almanza.kochappi.ui.common.UiState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClientListScreen(
     onBack: () -> Unit,
     onAddClient: () -> Unit,
-    onClientClick: (String) -> Unit,
+    onClientClick: (Int) -> Unit,
+    onEditClient: (Int) -> Unit,
+    onDeleteClient: (Int) -> Unit,
+    viewModel: ClientListViewModel = hiltViewModel(),
 ) {
+    val uiState by viewModel.uiState.collectAsState()
+    var clientToDelete by rememberSaveable { mutableStateOf<Int?>(null) }
+
+    if (clientToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { clientToDelete = null },
+            title = { Text("Eliminar cliente") },
+            text = { Text("¿Estás seguro de que deseas eliminar este cliente? Esta acción no se puede deshacer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteClient(clientToDelete!!)
+                    clientToDelete = null
+                }) {
+                    Text("Eliminar", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { clientToDelete = null }) {
+                    Text("Cancelar")
+                }
+            },
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -87,40 +111,72 @@ fun ClientListScreen(
             }
         },
     ) { innerPadding ->
-        if (sampleClients.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.outlineVariant,
-                    )
+        when (val state = uiState) {
+            is UiState.Idle, is UiState.Loading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+
+            is UiState.Error -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text(
-                        text = "Aún no tienes clientes",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = state.message,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(sampleClients, key = { it.id }) { client ->
-                    ClientCard(
-                        client = client,
-                        onClick = { onClientClick(client.id) },
-                    )
+
+            is UiState.Success -> {
+                val clients = state.data
+                if (clients.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                            Text(
+                                text = "Aún no tienes clientes",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(clients, key = { it.id }) { client ->
+                            ClientCard(
+                                client = client,
+                                onClick = { onClientClick(client.id) },
+                                onEdit = { onEditClient(client.id) },
+                                onDelete = { clientToDelete = client.id },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -129,8 +185,10 @@ fun ClientListScreen(
 
 @Composable
 private fun ClientCard(
-    client: ClientPreview,
+    client: Customer,
     onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -146,7 +204,7 @@ private fun ClientCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Surface(
@@ -172,14 +230,24 @@ private fun ClientCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = client.email,
+                    text = client.birthdate,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text(
-                    text = "Desde: ${client.startDate}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
+            }
+
+            IconButton(onClick = onEdit) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Editar cliente",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Eliminar cliente",
+                    tint = MaterialTheme.colorScheme.error,
                 )
             }
         }
