@@ -24,6 +24,20 @@ sealed interface Route {
     @Serializable data class TemplateExerciseAdd(
         val templateId: Int,
         val dayIndex: Int,
+        val nextDisplayOrder: Int,
+    ) : Route
+
+    @Serializable data class TemplateExerciseEdit(
+        val templateId: Int,
+        val dayIndex: Int,
+        /** > 0 if editing a saved detail; -1 if editing a pending detail. */
+        val detailId: Int,
+        /** >= 0 (global index in pending list) if editing a pending detail; -1 if editing a saved detail. */
+        val pendingIndex: Int,
+        val exerciseId: Int,
+        val sets: Int,
+        val reps: Int,
+        val displayOrder: Int,
     ) : Route
 
     // Trainer — Client Detail

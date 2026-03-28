@@ -10,6 +10,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 
+/**
+ * Day labels ordered by tab index (0-based).
+ *
+ * IMPORTANT — tab index vs. API day-of-week:
+ *   - UI tab index : 0 = Lunes … 6 = Domingo  (0-based)
+ *   - API dayOfWeek: 1 = Lunes … 7 = Domingo  (1-based)
+ *
+ * Always convert before sending to the API:  dayOfWeek = tabIndex + 1
+ * Always convert when reading from the API:  tabIndex  = dayOfWeek - 1
+ */
 val dayLabels = listOf("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
 
 @OptIn(ExperimentalMaterial3Api::class)

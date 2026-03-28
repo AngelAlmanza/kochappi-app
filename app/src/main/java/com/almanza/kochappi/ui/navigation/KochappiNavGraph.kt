@@ -1,12 +1,22 @@
 package com.almanza.kochappi.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.almanza.kochappi.domain.model.CreateDetailParams
+import com.almanza.kochappi.domain.model.UserRole
+import com.almanza.kochappi.ui.trainer.clients.ClientDetailViewModel
+import com.almanza.kochappi.ui.trainer.clients.ClientListViewModel
+import com.almanza.kochappi.ui.trainer.exercises.ExerciseListViewModel
+import com.almanza.kochappi.ui.trainer.templates.TemplateFormViewModel
+import com.almanza.kochappi.ui.trainer.templates.TemplateListViewModel
 import com.almanza.kochappi.ui.auth.forgot.ForgotPasswordScreen
 import com.almanza.kochappi.ui.auth.login.LoginScreen
+import com.almanza.kochappi.ui.client.dashboard.ClientDashboardScreen
 import com.almanza.kochappi.ui.home.HomeScreen
 import com.almanza.kochappi.ui.trainer.clients.ClientDetailScreen
 import com.almanza.kochappi.ui.trainer.clients.ClientFormScreen
@@ -23,16 +33,24 @@ import com.almanza.kochappi.ui.trainer.templates.TemplateFormScreen
 import com.almanza.kochappi.ui.trainer.templates.TemplateListScreen
 
 @Composable
-fun KochappiNavGraph(navController: NavHostController) {
+fun KochappiNavGraph(
+    navController: NavHostController,
+    startDestination: Route = Route.Login,
+    displayName: String = "",
+) {
     NavHost(
         navController = navController,
-        startDestination = Route.Login,
+        startDestination = startDestination,
     ) {
         // ── Auth ──
         composable<Route.Login> {
             LoginScreen(
-                onLoginSuccess = {
-                    navController.navigate(Route.Home) {
+                onLoginSuccess = { role ->
+                    val destination = when (role) {
+                        UserRole.TRAINER -> Route.Home
+                        UserRole.CLIENT -> Route.ClientDashboard
+                    }
+                    navController.navigate(destination) {
                         popUpTo(Route.Login) { inclusive = true }
                     }
                 },
@@ -53,7 +71,7 @@ fun KochappiNavGraph(navController: NavHostController) {
             )
         }
 
-        // ── Home ──
+        // ── Home (Trainer) ──
         composable<Route.Home> {
             HomeScreen(
                 onNavigateToClients = {
@@ -71,23 +89,48 @@ fun KochappiNavGraph(navController: NavHostController) {
             )
         }
 
+        // ── Client Dashboard ──
+        composable<Route.ClientDashboard> {
+            ClientDashboardScreen(
+                displayName = displayName,
+                onNavigateToSettings = {
+                    navController.navigate(Route.Settings)
+                },
+            )
+        }
+
         // ── Trainer: Clients ──
-        composable<Route.ClientList> {
+        composable<Route.ClientList> { backStackEntry ->
+            val viewModel: ClientListViewModel = hiltViewModel()
+
+            LaunchedEffect(Unit) {
+                backStackEntry.savedStateHandle
+                    .getStateFlow("refresh_clients", false)
+                    .collect { shouldRefresh ->
+                        if (shouldRefresh) {
+                            viewModel.loadClients()
+                            backStackEntry.savedStateHandle.remove<Boolean>("refresh_clients")
+                        }
+                    }
+            }
+
             ClientListScreen(
                 onBack = { navController.popBackStack() },
-                onAddClient = {
-                    navController.navigate(Route.ClientAdd)
-                },
-                onClientClick = { clientId ->
-                    navController.navigate(Route.ClientDetail(clientId))
-                },
+                onAddClient = { navController.navigate(Route.ClientAdd) },
+                onClientClick = { clientId -> navController.navigate(Route.ClientDetail(clientId)) },
+                onEditClient = { clientId -> navController.navigate(Route.ClientEdit(clientId)) },
+                onDeleteClient = { clientId -> viewModel.deleteClient(clientId) },
+                viewModel = viewModel,
             )
         }
 
         composable<Route.ClientAdd> {
             ClientFormScreen(
                 clientId = null,
-                onSave = { navController.popBackStack() },
+                onSave = {
+                    navController.previousBackStackEntry?.savedStateHandle?.set("refresh_clients", true)
+                    navController.popBackStack()
+                },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -96,30 +139,61 @@ fun KochappiNavGraph(navController: NavHostController) {
             val route = backStackEntry.toRoute<Route.ClientEdit>()
             ClientFormScreen(
                 clientId = route.clientId,
-                onSave = { navController.popBackStack() },
+                onSave = {
+                    navController.previousBackStackEntry?.savedStateHandle?.apply {
+                        set("refresh_client", true)   // para ClientDetail
+                        set("refresh_clients", true)  // para ClientList
+                    }
+                    navController.popBackStack()
+                },
                 onBack = { navController.popBackStack() },
             )
         }
 
         composable<Route.ClientDetail> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.ClientDetail>()
+            val viewModel: ClientDetailViewModel = hiltViewModel()
+
+            LaunchedEffect(Unit) {
+                backStackEntry.savedStateHandle
+                    .getStateFlow("refresh_client", false)
+                    .collect { shouldRefresh ->
+                        if (shouldRefresh) {
+                            viewModel.loadClient(route.clientId)
+                            backStackEntry.savedStateHandle.remove<Boolean>("refresh_client")
+                        }
+                    }
+            }
+
             ClientDetailScreen(
                 clientId = route.clientId,
                 onBack = { navController.popBackStack() },
-                onEditClient = { clientId ->
-                    navController.navigate(Route.ClientEdit(clientId))
+                onEditClient = { clientId -> navController.navigate(Route.ClientEdit(clientId)) },
+                onClientDeleted = {
+                    navController.previousBackStackEntry?.savedStateHandle?.set("refresh_clients", true)
+                    navController.popBackStack()
                 },
-                onAssignRoutine = { clientId ->
-                    navController.navigate(Route.RoutineAdd(clientId = clientId))
-                },
-                onRoutineClick = { routineId ->
-                    navController.navigate(Route.RoutineDetail(routineId))
-                },
+                onAssignRoutine = { clientId -> navController.navigate(Route.RoutineAdd(clientId = clientId)) },
+                onRoutineClick = { routineId -> navController.navigate(Route.RoutineDetail(routineId)) },
+                viewModel = viewModel,
             )
         }
 
         // ── Trainer: Exercises ──
-        composable<Route.ExerciseList> {
+        composable<Route.ExerciseList> { backStackEntry ->
+            val viewModel: ExerciseListViewModel = hiltViewModel()
+
+            LaunchedEffect(Unit) {
+                backStackEntry.savedStateHandle
+                    .getStateFlow("refresh_exercises", false)
+                    .collect { shouldRefresh ->
+                        if (shouldRefresh) {
+                            viewModel.loadExercises()
+                            backStackEntry.savedStateHandle.remove<Boolean>("refresh_exercises")
+                        }
+                    }
+            }
+
             ExerciseListScreen(
                 onBack = { navController.popBackStack() },
                 onAddExercise = {
@@ -128,13 +202,17 @@ fun KochappiNavGraph(navController: NavHostController) {
                 onExerciseClick = { exerciseId ->
                     navController.navigate(Route.ExerciseEdit(exerciseId))
                 },
+                viewModel = viewModel,
             )
         }
 
         composable<Route.ExerciseAdd> {
             ExerciseFormScreen(
                 exerciseId = null,
-                onSave = { navController.popBackStack() },
+                onSave = {
+                    navController.previousBackStackEntry?.savedStateHandle?.set("refresh_exercises", true)
+                    navController.popBackStack()
+                },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -143,13 +221,29 @@ fun KochappiNavGraph(navController: NavHostController) {
             val route = backStackEntry.toRoute<Route.ExerciseEdit>()
             ExerciseFormScreen(
                 exerciseId = route.exerciseId,
-                onSave = { navController.popBackStack() },
+                onSave = {
+                    navController.previousBackStackEntry?.savedStateHandle?.set("refresh_exercises", true)
+                    navController.popBackStack()
+                },
                 onBack = { navController.popBackStack() },
             )
         }
 
         // ── Trainer: Templates ──
-        composable<Route.TemplateList> {
+        composable<Route.TemplateList> { backStackEntry ->
+            val viewModel: TemplateListViewModel = hiltViewModel()
+
+            LaunchedEffect(Unit) {
+                backStackEntry.savedStateHandle
+                    .getStateFlow("refresh_templates", false)
+                    .collect { shouldRefresh ->
+                        if (shouldRefresh) {
+                            viewModel.loadTemplates()
+                            backStackEntry.savedStateHandle.remove<Boolean>("refresh_templates")
+                        }
+                    }
+            }
+
             TemplateListScreen(
                 onBack = { navController.popBackStack() },
                 onAddTemplate = {
@@ -158,41 +252,98 @@ fun KochappiNavGraph(navController: NavHostController) {
                 onTemplateClick = { templateId ->
                     navController.navigate(Route.TemplateEdit(templateId))
                 },
+                viewModel = viewModel,
             )
         }
 
-        composable<Route.TemplateAdd> {
+        composable<Route.TemplateAdd> { backStackEntry ->
+            val viewModel: TemplateFormViewModel = hiltViewModel()
+
+            // Observe results from TemplateExerciseAdd / TemplateExerciseEdit
+            LaunchedEffect(Unit) {
+                val handle = backStackEntry.savedStateHandle
+                handle.getStateFlow("result_exerciseId", -1).collect { exerciseId ->
+                    if (exerciseId > 0) {
+                        val dayOfWeek = handle.get<Int>("result_dayOfWeek") ?: return@collect
+                        val displayOrder = handle.get<Int>("result_displayOrder") ?: return@collect
+                        val sets = handle.get<Int>("result_sets") ?: return@collect
+                        val reps = handle.get<Int>("result_reps") ?: return@collect
+                        val detailId = handle.get<Int>("result_detailId") ?: -1
+                        val pendingIndex = handle.get<Int>("result_pendingIndex") ?: -1
+                        val params = CreateDetailParams(exerciseId, dayOfWeek, displayOrder, sets, reps)
+                        when {
+                            detailId > 0 -> viewModel.replaceSavedDetail(detailId, params)
+                            pendingIndex >= 0 -> viewModel.updatePendingDetail(pendingIndex, params)
+                            else -> viewModel.addPendingDetail(params)
+                        }
+                        handle.remove<Int>("result_exerciseId")
+                    }
+                }
+            }
+
             TemplateFormScreen(
                 templateId = null,
-                onSave = { navController.popBackStack() },
-                onBack = { navController.popBackStack() },
-                onAddExercise = { dayIndex ->
-                    navController.navigate(Route.TemplateExerciseAdd("new", dayIndex))
+                onSave = {
+                    navController.previousBackStackEntry?.savedStateHandle?.set("refresh_templates", true)
+                    navController.popBackStack()
                 },
-                onEditExercise = { dayIndex, exerciseIndex ->
+                onBack = { navController.popBackStack() },
+                onAddExercise = { dayIndex, nextDisplayOrder ->
+                    navController.navigate(Route.TemplateExerciseAdd(0, dayIndex, nextDisplayOrder))
+                },
+                onEditExercise = { detailId, pendingIndex, dayIndex, exerciseId, sets, reps, displayOrder ->
                     navController.navigate(
-                        Route.TemplateExerciseEdit("new", dayIndex, exerciseIndex)
+                        Route.TemplateExerciseEdit(0, dayIndex, detailId, pendingIndex, exerciseId, sets, reps, displayOrder)
                     )
                 },
+                viewModel = viewModel,
             )
         }
 
         composable<Route.TemplateEdit> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.TemplateEdit>()
+            val viewModel: TemplateFormViewModel = hiltViewModel()
+
+            // Observe results from TemplateExerciseAdd / TemplateExerciseEdit
+            LaunchedEffect(Unit) {
+                val handle = backStackEntry.savedStateHandle
+                handle.getStateFlow("result_exerciseId", -1).collect { exerciseId ->
+                    if (exerciseId > 0) {
+                        val dayOfWeek = handle.get<Int>("result_dayOfWeek") ?: return@collect
+                        val displayOrder = handle.get<Int>("result_displayOrder") ?: return@collect
+                        val sets = handle.get<Int>("result_sets") ?: return@collect
+                        val reps = handle.get<Int>("result_reps") ?: return@collect
+                        val detailId = handle.get<Int>("result_detailId") ?: -1
+                        val pendingIndex = handle.get<Int>("result_pendingIndex") ?: -1
+                        val params = CreateDetailParams(exerciseId, dayOfWeek, displayOrder, sets, reps)
+                        when {
+                            detailId > 0 -> viewModel.replaceSavedDetail(detailId, params)
+                            pendingIndex >= 0 -> viewModel.updatePendingDetail(pendingIndex, params)
+                            else -> viewModel.addPendingDetail(params)
+                        }
+                        handle.remove<Int>("result_exerciseId")
+                    }
+                }
+            }
+
             TemplateFormScreen(
                 templateId = route.templateId,
-                onSave = { navController.popBackStack() },
+                onSave = {
+                    navController.previousBackStackEntry?.savedStateHandle?.set("refresh_templates", true)
+                    navController.popBackStack()
+                },
                 onBack = { navController.popBackStack() },
-                onAddExercise = { dayIndex ->
+                onAddExercise = { dayIndex, nextDisplayOrder ->
                     navController.navigate(
-                        Route.TemplateExerciseAdd(route.templateId, dayIndex)
+                        Route.TemplateExerciseAdd(route.templateId, dayIndex, nextDisplayOrder)
                     )
                 },
-                onEditExercise = { dayIndex, exerciseIndex ->
+                onEditExercise = { detailId, pendingIndex, dayIndex, exerciseId, sets, reps, displayOrder ->
                     navController.navigate(
-                        Route.TemplateExerciseEdit(route.templateId, dayIndex, exerciseIndex)
+                        Route.TemplateExerciseEdit(route.templateId, dayIndex, detailId, pendingIndex, exerciseId, sets, reps, displayOrder)
                     )
                 },
+                viewModel = viewModel,
             )
         }
 
@@ -200,8 +351,18 @@ fun KochappiNavGraph(navController: NavHostController) {
             val route = backStackEntry.toRoute<Route.TemplateExerciseAdd>()
             TemplateExerciseFormScreen(
                 dayIndex = route.dayIndex,
-                exerciseIndex = null,
-                onSave = { navController.popBackStack() },
+                initialDisplayOrder = route.nextDisplayOrder,
+                onSave = { exerciseId, dayOfWeek, displayOrder, sets, reps ->
+                    navController.previousBackStackEntry?.savedStateHandle?.apply {
+                        set("result_exerciseId", exerciseId)
+                        set("result_dayOfWeek", dayOfWeek)
+                        set("result_displayOrder", displayOrder)
+                        set("result_sets", sets)
+                        set("result_reps", reps)
+                        // No result_detailId / result_pendingIndex → treated as a new addition
+                    }
+                    navController.popBackStack()
+                },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -210,8 +371,22 @@ fun KochappiNavGraph(navController: NavHostController) {
             val route = backStackEntry.toRoute<Route.TemplateExerciseEdit>()
             TemplateExerciseFormScreen(
                 dayIndex = route.dayIndex,
-                exerciseIndex = route.exerciseIndex,
-                onSave = { navController.popBackStack() },
+                initialDisplayOrder = route.displayOrder,
+                initialExerciseId = route.exerciseId,
+                initialSets = route.sets,
+                initialReps = route.reps,
+                onSave = { exerciseId, dayOfWeek, displayOrder, sets, reps ->
+                    navController.previousBackStackEntry?.savedStateHandle?.apply {
+                        set("result_exerciseId", exerciseId)
+                        set("result_dayOfWeek", dayOfWeek)
+                        set("result_displayOrder", displayOrder)
+                        set("result_sets", sets)
+                        set("result_reps", reps)
+                        set("result_detailId", route.detailId)
+                        set("result_pendingIndex", route.pendingIndex)
+                    }
+                    navController.popBackStack()
+                },
                 onBack = { navController.popBackStack() },
             )
         }

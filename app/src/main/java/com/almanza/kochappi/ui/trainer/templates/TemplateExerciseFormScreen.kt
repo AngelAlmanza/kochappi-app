@@ -1,5 +1,6 @@
 package com.almanza.kochappi.ui.trainer.templates
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,15 +17,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -34,48 +37,48 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-
-private val dayLabels = listOf("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
-private val loadModes = listOf("Peso fijo", "% de 1RM")
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.almanza.kochappi.ui.common.UiState
+import com.almanza.kochappi.ui.common.dayLabels
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TemplateExerciseFormScreen(
     dayIndex: Int,
-    exerciseIndex: Int?,
-    onSave: () -> Unit,
+    /** Pre-assigned display order (auto-computed by caller). Read-only in the form. */
+    initialDisplayOrder: Int,
+    onSave: (exerciseId: Int, dayOfWeek: Int, displayOrder: Int, sets: Int, reps: Int) -> Unit,
     onBack: () -> Unit,
+    initialExerciseId: Int = -1,
+    initialSets: Int? = null,
+    initialReps: Int? = null,
+    viewModel: TemplateExerciseFormViewModel = hiltViewModel(),
 ) {
-    val isEditing = exerciseIndex != null
+    val isEditing = initialExerciseId > 0
     val dayName = dayLabels.getOrElse(dayIndex) { "Día" }
+    val exercisesState by viewModel.exercisesState.collectAsStateWithLifecycle()
 
-    var name by rememberSaveable { mutableStateOf("") }
-    var sets by rememberSaveable { mutableStateOf("") }
-    var reps by rememberSaveable { mutableStateOf("") }
-    var selectedLoadMode by rememberSaveable { mutableIntStateOf(0) }
-    var fixedWeight by rememberSaveable { mutableStateOf("") }
-    var loadPercentage by rememberSaveable { mutableStateOf("") }
-    var videoUrl by rememberSaveable { mutableStateOf("") }
-    var notes by rememberSaveable { mutableStateOf("") }
-    var order by rememberSaveable { mutableStateOf("") }
+    var selectedExerciseId by rememberSaveable { mutableIntStateOf(initialExerciseId) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var sets by rememberSaveable { mutableStateOf(initialSets?.toString() ?: "") }
+    var reps by rememberSaveable { mutableStateOf(initialReps?.toString() ?: "") }
 
-    val isFormValid = name.isNotBlank()
+    val exercises = (exercisesState as? UiState.Success)?.data.orEmpty()
+    val selectedExerciseName = exercises.find { it.id == selectedExerciseId }?.name ?: ""
+    val isFormValid = selectedExerciseId > 0
             && sets.toIntOrNull() != null
             && reps.toIntOrNull() != null
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        if (isEditing) "Editar ejercicio — $dayName"
-                        else "Agregar ejercicio — $dayName"
-                    )
-                },
+                title = { Text(if (isEditing) "Editar ejercicio — $dayName" else "Agregar ejercicio — $dayName") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -90,202 +93,179 @@ fun TemplateExerciseFormScreen(
             )
         },
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 24.dp)
-                .imePadding()
-                .verticalScroll(rememberScrollState()),
-        ) {
-            Spacer(Modifier.height(8.dp))
-
-            // ── Basic info ──
-            Text(
-                text = "Ejercicio",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Nombre del ejercicio *") },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            Row(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = sets,
-                    onValueChange = { sets = it.filter { c -> c.isDigit() } },
-                    label = { Text("Series *") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier.weight(1f),
-                )
-
-                Spacer(Modifier.width(12.dp))
-
-                OutlinedTextField(
-                    value = reps,
-                    onValueChange = { reps = it.filter { c -> c.isDigit() } },
-                    label = { Text("Reps *") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier.weight(1f),
-                )
-
-                Spacer(Modifier.width(12.dp))
-
-                OutlinedTextField(
-                    value = order,
-                    onValueChange = { order = it.filter { c -> c.isDigit() } },
-                    label = { Text("Orden") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            // ── Load mode ──
-            Text(
-                text = "Modo de carga",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                loadModes.forEachIndexed { index, label ->
-                    SegmentedButton(
-                        selected = selectedLoadMode == index,
-                        onClick = { selectedLoadMode = index },
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = loadModes.size,
-                        ),
-                    ) {
-                        Text(label)
-                    }
+        when (exercisesState) {
+            is UiState.Idle, is UiState.Loading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
-
-            if (selectedLoadMode == 0) {
-                OutlinedTextField(
-                    value = fixedWeight,
-                    onValueChange = { fixedWeight = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Peso (kg)") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else {
-                OutlinedTextField(
-                    value = loadPercentage,
-                    onValueChange = { loadPercentage = it.filter { c -> c.isDigit() } },
-                    label = { Text("Porcentaje del 1RM (%)") },
-                    supportingText = { Text("Se calculará con el 1RM del cliente al asignar") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            is UiState.Error -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = (exercisesState as UiState.Error).message,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
 
-            Spacer(Modifier.height(24.dp))
+            is UiState.Success -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(horizontal = 24.dp)
+                        .imePadding()
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Spacer(Modifier.height(8.dp))
 
-            // ── Video ──
-            Text(
-                text = "Video de referencia",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
+                    // Exercise selector
+                    Text(
+                        text = "Ejercicio",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
 
-            Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(16.dp))
 
-            OutlinedTextField(
-                value = videoUrl,
-                onValueChange = { videoUrl = it },
-                label = { Text("URL del video (YouTube, etc.)") },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    imeAction = ImeAction.Next,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { expanded = it },
+                    ) {
+                        OutlinedTextField(
+                            value = selectedExerciseName,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Seleccionar ejercicio *") },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                        )
 
-            Spacer(Modifier.height(24.dp))
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                        ) {
+                            exercises.forEach { exercise ->
+                                DropdownMenuItem(
+                                    text = { Text(exercise.name) },
+                                    onClick = {
+                                        selectedExerciseId = exercise.id
+                                        expanded = false
+                                    },
+                                )
+                            }
+                            if (exercises.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "No hay ejercicios disponibles",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    },
+                                    onClick = { expanded = false },
+                                )
+                            }
+                        }
+                    }
 
-            // ── Notes ──
-            Text(
-                text = "Notas",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
+                    Spacer(Modifier.height(24.dp))
 
-            Spacer(Modifier.height(16.dp))
+                    // Sets, Reps, Order
+                    Text(
+                        text = "Configuración",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
 
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Indicaciones, técnica, precauciones...") },
-                shape = RoundedCornerShape(12.dp),
-                minLines = 3,
-                maxLines = 5,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                modifier = Modifier.fillMaxWidth(),
-            )
+                    Spacer(Modifier.height(16.dp))
 
-            Spacer(Modifier.height(32.dp))
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = sets,
+                            onValueChange = { sets = it.filter { c -> c.isDigit() } },
+                            label = { Text("Series *") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next,
+                            ),
+                            modifier = Modifier.weight(1f),
+                        )
 
-            Button(
-                onClick = onSave,
-                enabled = isFormValid,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-            ) {
-                Text(
-                    text = if (isEditing) "Guardar cambios" else "Agregar ejercicio",
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                        Spacer(Modifier.width(12.dp))
+
+                        OutlinedTextField(
+                            value = reps,
+                            onValueChange = { reps = it.filter { c -> c.isDigit() } },
+                            label = { Text("Reps *") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Done,
+                            ),
+                            modifier = Modifier.weight(1f),
+                        )
+
+                        Spacer(Modifier.width(12.dp))
+
+                        // Order is auto-assigned and read-only; reordering will be a future feature
+                        OutlinedTextField(
+                            value = initialDisplayOrder.toString(),
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Orden") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+
+                    Spacer(Modifier.height(32.dp))
+
+                    Button(
+                        onClick = {
+                            // dayIndex is 0-based (tab index); API expects 1-based dayOfWeek
+                            onSave(
+                                selectedExerciseId,
+                                dayIndex + 1,
+                                initialDisplayOrder,
+                                sets.toInt(),
+                                reps.toInt(),
+                            )
+                        },
+                        enabled = isFormValid,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                    ) {
+                        Text(
+                            text = if (isEditing) "Guardar cambios" else "Agregar ejercicio",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+                }
             }
-
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
